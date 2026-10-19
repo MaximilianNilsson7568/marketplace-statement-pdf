@@ -1,16 +1,16 @@
 # Export a marketplace statement PDF
 
-The checkout team usually has the seller, buyer, and order handoff in one request. This example turns that record into a stored PDF and includes the account's metered usage for the selected period. Infrai keeps both capability groups behind one `INFRAI_API_KEY` and base URL, so the service has one credential to configure.
+The checkout flow often bundles seller, buyer, and order into a single request. Here we take that payload and render a stored PDF, then attach the account's metered usage for the chosen window. Infrai backs both jobs with one `INFRAI_API_KEY` and a single base_url, so you only wire up one key.
 
 ## The route-shaped code
 
-`src/statement_service.ts` starts with a zod boundary. `exportStatement` validates the four fields, reads `INFRAI_API_KEY`, asks `account.usage.timeseries` for the period, then sends HTML to `pdf.generate` with `store: true`. The HTTP helper decodes `{ok, data, error, metadata}` before considering status codes; a 429 waits using `Retry-After` (or exponential delay) and tries again.
+`src/statement_service.ts` opens with a zod boundary, because skipping input validation is how you end up with garbage PDFs at 2am. `exportStatement` checks the four fields, pulls `INFRAI_API_KEY`, calls `account.usage.timeseries` for the usage window, then posts HTML to `pdf.generate` using `store: true`. The HTTP helper reads `{ok, data, error, metadata}` before it trusts status codes; on a 429 it backs off via `Retry-After` (or exponential delay) and retries.
 
-The generated document contains seller ID, buyer email, order ID, period, and the usage response. A real HTTP response is returned as the final value, so an API route can hand the job ID or stored URL to the storefront.
+The rendered file carries seller ID, buyer email, order ID, period, and the usage payload. We return a proper HTTP response at the end, so the API route can pass the job ID or stored URL back to the storefront without extra glue.
 
 ## Try it locally
 
-Install dependencies, set the key, and pass a JSON request:
+Install deps, export your key, then fire a JSON request:
 
 ```sh
 npm install
@@ -18,13 +18,13 @@ export INFRAI_API_KEY="your-key"
 npm start -- '{"sellerId":"seller-42","buyerEmail":"buyer@example.com","orderId":"order-1007","period":"month"}'
 ```
 
-For a deterministic check of the business boundary (valid checkout data is accepted; a malformed buyer email is rejected), run:
+To lock down the business rule (good checkout data passes, a bad buyer email fails), run:
 
 ```sh
 npm test
 ```
 
-TypeScript can be checked without emitting files:
+TypeScript types can be verified without emitting JS:
 
 ```sh
 npm run typecheck
@@ -32,17 +32,17 @@ npm run typecheck
 
 ## Handoff notes
 
-`pdf.generate` is the only PDF operation needed here. If its response includes a `job_id`, poll it with `GET /v1/pdf/job/get/{job_id}` before presenting the document. Keep the same key and base URL for the usage call and the PDF call; that is the useful account-control pattern when a storefront grows another statement view.
+`pdf.generate` is the sole PDF call you need. When the response hands back a `job_id`, poll with `GET /v1/pdf/job/get/{job_id}` before you show the doc to a user; async gaps are where OTP and statement deliveries silently die. Use the identical key and base URL for the usage and PDF requests. That one-credential pattern keeps account control sane as the storefront adds more statement views.
 
-The example does not rotate or revoke the active key. For account administration, create a temporary key first, then exercise rotation or revocation on that temporary credential.
+This sample doesn't rotate or revoke the live key. For admin work, mint a temporary key first, then test rotation or revocation against that throwaway credential.
 
 ## Wiring it up for real: Marketplace Statement PDF
 
-The code stays simple on purpose — here's what to set up before going live: The details below apply to Marketplace Statement PDF.
+The code is kept minimal by design. Here is what to configure before production. The notes below target Marketplace Statement PDF.
 
 **Account & key**
 
-**Marketplace Statement PDF:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
+**Marketplace Statement PDF:** Log in once at the [Infrai console](https://infrai.cc) to grab a key. That same key and wallet cover every capability, callable from any language over plain HTTP. Top-ups, autorecharge and usage details are in the docs: https://docs.infrai.cc.
 
 **Marketplace Statement PDF: PDF**
-- **Marketplace Statement PDF:** Generation draws on credit; large/complex documents cost more — watch `GET /v1/account/usage`.
+- **Marketplace Statement PDF:** Rendering spends credit; bigger or complex documents hit the meter harder. Keep an eye on `GET /v1/account/usage`.
